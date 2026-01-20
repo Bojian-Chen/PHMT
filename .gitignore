@@ -1,0 +1,37 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+# VS Code
+.vscode/
+
+# 忽略 data 和 log 文件夹下的所有内容
+# data/*
+log/*
+# 保留 .gitkeep 文件
+# !data/.gitkeep
+!log/.gitkeep
+
+*.csv
+*.h5
+*.pth
+*.ckpt
+*.zip
+*.tar.gz
+*.png
+*.pdf
+*.svg
+*.ipynb
+
+
+Computer.py
+main_A.py
+main_A_ours.py
+main_grid_csfda.py
+main_p-ZJU-Bojian-Chen-ZJU-Bojian-Chen.py
+main_p-ZJU-Bojian-Chen.py
+main_p.py
+plot.py
+ours_new.py
+ours.py
