@@ -183,7 +183,6 @@ parser.add_argument('--ablation_EMA', default=True, type=lambda x: x.lower() == 
 parser.add_argument('--ablation_SR', default=True, type=lambda x: x.lower() == 'true', help='Enable SR')
 parser.add_argument('--ablation_adaptive', default=True, type=lambda x: x.lower() == 'true', help='Enable Adaptive')
 
-
 ### Get all the arguments
 args = parser.parse_args()
 
