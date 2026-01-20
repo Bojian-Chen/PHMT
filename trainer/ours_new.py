@@ -273,7 +273,7 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
 
         # ===== update confidence_gate for NEXT epoch =====
         # gate_target = gate_min + (gate_max - gate_min) * conf
-        gate_target = 0.4 * H_max + (gate_min - 0.4 * H_max) * conf
+        # gate_target = 0.4 * H_max + (gate_min - 0.4 * H_max) * conf
         gate_target = u * H_max
 
         # if epoch == 0:
