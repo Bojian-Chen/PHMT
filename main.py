@@ -53,13 +53,19 @@ parser.add_argument('--nb_session', type=int, help='the number of sessions')
 parser.add_argument('--save_model', action='store_true', help='the save setting')
 
 ### Ablation setting for ours_simple
+parser.add_argument('--CKCR', action='store_false', help='Enable CKCR')
+parser.add_argument('--select_soft_knowledge', action='store_false', help='Enable soft knowledge selection')
+parser.add_argument('--mixup', action='store_false', help='Enable mixup')
+parser.add_argument('--EPHS', action='store_false', help='Enable EPHS')
+parser.add_argument('--FISR', action='store_false', help='Enable Fisher-weighted SR')
+parser.add_argument('--SR', action='store_false', help='Enable basic SR')
+parser.add_argument('--MI', action='store_false', help='Enable MI loss')
 parser.add_argument('--TOPK', action='store_false', help='the ablation setting')
 parser.add_argument('--PCA', action='store_false', help='the ablation setting')
-parser.add_argument('--MI', action='store_false', help='the ablation setting')
-parser.add_argument('--SR', action='store_false', help='the ablation setting')
+
 
 ### Ablation setting for ours
-parser.add_argument('--mixup', action='store_false', help='the ablation setting')
+# parser.add_argument('--mixup', action='store_false', help='the ablation setting')
 # parser.add_argument('--sr_start', default=0.01, type=float, help='the sr_start for moving weight')
 # parser.add_argument('--sr_end', default=0.05, type=float, help='the sr_end for moving weight')
 

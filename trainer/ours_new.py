@@ -302,8 +302,8 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
             len(train_loader), train_loss/(batch_idx+1),  100.*correct/total))
 
         # Running the test for this epoch
-        student_backbone.eval()
-        student_classifier.eval()
+        teacher_backbone.eval()
+        teacher_classifier.eval()
 
         test_loss = 0
         correct = 0
@@ -312,8 +312,8 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
         with torch.no_grad():
             for batch_idx, instance in enumerate(test_loader):
                 inputs, labels = instance[0].to(device), instance[1].to(device)
-                features = student_backbone(inputs)
-                outputs = student_classifier(features)
+                features = teacher_backbone(inputs)
+                outputs = teacher_classifier(features)
                 loss = nn.CrossEntropyLoss()(outputs, labels)
                 test_loss += loss.item()
                 _, predicted = outputs.max(1)
@@ -325,8 +325,8 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
         # Save the best model
         if 100.*correct/total >= best_acc:
             best_acc = 100.*correct/total
-            best_backbone = copy.deepcopy(student_backbone)
-            best_classifier = copy.deepcopy(student_classifier)
+            best_backbone = copy.deepcopy(teacher_backbone)
+            best_classifier = copy.deepcopy(teacher_classifier)
             confidence_gate_best = confidence_gate_prev
         # with torch.no_grad():
         #     acc_list = [100.0, 94.8, 99.3, 99.4, 99.8]
