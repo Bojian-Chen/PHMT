@@ -96,19 +96,12 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
 
 
     for epoch in range(args.epochs):
-        # if args.dataset_name == 'iFlytek' or args.dataset_name == 'WT':
-        #     confidence_gate= moving_weight(epoch, args.epochs, 0.9, 0.95) # for iFlytek
-        # elif args.dataset_name == 'SK':
-        #     confidence_gate= moving_weight(epoch, args.epochs, 0.5, 0.8) # for SK
-            # confidence_gate= moving_weight(epoch, args.epochs, args.confidence_gate_start, args.confidence_gate_end) # for SK
 
         epoch_ent_sum = 0.0
         epoch_ent_n = 0
         epoch_num_classes = None
         confidence_gate = float(confidence_gate_prev)
 
-        # confidence_gate = 0.3
-        # reg_alpha = moving_weight(epoch, args.epochs, 1.0, 0.5)
         reg_alpha = 1.0
         # Set the model to the training mode
         teacher_backbone.train()
@@ -207,8 +200,6 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
             classifier_optimizer.step()
 
 
-
-
         # ===== compute epoch-conf =====
         if (epoch_ent_n > 0) and (epoch_num_classes is not None):
             bar_H = epoch_ent_sum / epoch_ent_n
@@ -250,9 +241,15 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
 
         new_bn_statistics = get_bn_statistics(student_backbone.state_dict())
         
-        bn_statistics_moving_average(old_bn_statistics, new_bn_statistics, epoch, args.epochs,tao_begin=tao, tao_end=tao) 
-        exponential_moving_average(teacher_backbone, student_backbone, epoch, args.epochs,tao_begin=tao, tao_end=tao)
-        exponential_moving_average(teacher_classifier, student_classifier, epoch, args.epochs,tao_begin=tao, tao_end=tao)
+        # EMA updates for Mean-Teacher framework
+        if args.EMA:
+            bn_statistics_moving_average(old_bn_statistics, new_bn_statistics, epoch, args.epochs,tao_begin=tao, tao_end=tao) 
+            exponential_moving_average(teacher_backbone, student_backbone, epoch, args.epochs,tao_begin=tao, tao_end=tao)
+            exponential_moving_average(teacher_classifier, student_classifier, epoch, args.epochs,tao_begin=tao, tao_end=tao)
+        else:
+            # Without EMA: directly copy student to teacher (no momentum)
+            teacher_backbone.load_state_dict(student_backbone.state_dict())
+            teacher_classifier.load_state_dict(student_classifier.state_dict())
         if args.FISR:
             fisher_weighted_sr(teacher_backbone, old_state_backbone, fishers, rst=rst)
         elif args.SR:
@@ -271,24 +268,9 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
         else:
             pass
 
-        # if args.SR:
-        #     # rst = moving_weight(epoch, args.epochs, 0.01, 0.05)
-        #     diff_weighted_sr(
-        #         model=student_backbone,
-        #         ref_state=old_state_backbone,
-        #         teacher_model=teacher_backbone,
-        #         rst=rst
-        #     )
-        #     diff_weighted_sr(
-        #         model=student_classifier,
-        #         ref_state=old_state_classifier,
-        #         teacher_model=teacher_classifier,
-        #         rst=rst
-        #     )
-      
-
-        student_backbone.load_state_dict(teacher_backbone.state_dict())
-        student_classifier.load_state_dict(teacher_classifier.state_dict())
+        if args.Reset_student:
+            student_backbone.load_state_dict(teacher_backbone.state_dict())
+            student_classifier.load_state_dict(teacher_classifier.state_dict())
 
 
 
@@ -328,15 +310,7 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
             best_backbone = copy.deepcopy(teacher_backbone)
             best_classifier = copy.deepcopy(teacher_classifier)
             confidence_gate_best = confidence_gate_prev
-        # with torch.no_grad():
-        #     acc_list = [100.0, 94.8, 99.3, 99.4, 99.8]
-        #     bwt = []
-        #     for k in range(args.session):
-        #         c = evaluate_during_train(args, student_backbone, student_classifier, k)
-        #         bwt.append(c-acc_list[k])
-        #     bwt = np.mean(bwt)
-        #     print('BWT: {:.4f}'.format(bwt))
-        # fishers = Fisher(best_backbone, best_classifier, train_loader)
+
         fishers= Fisher_Entropy(best_backbone, best_classifier, confidence_gate_best, train_loader)
 
     return best_backbone, best_classifier, fishers

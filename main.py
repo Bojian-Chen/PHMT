@@ -60,11 +60,13 @@ parser.add_argument('--EPHS', action='store_false', help='Enable EPHS')
 parser.add_argument('--FISR', action='store_false', help='Enable Fisher-weighted SR')
 parser.add_argument('--SR', action='store_false', help='Enable basic SR')
 parser.add_argument('--MI', action='store_false', help='Enable MI loss')
+parser.add_argument('--EMA', action='store_false', help='Enable EMA for Mean-Teacher')
+parser.add_argument('--Reset_student', action='store_false', help='Reset student from teacher each epoch')
 parser.add_argument('--TOPK', action='store_false', help='the ablation setting')
 parser.add_argument('--PCA', action='store_false', help='the ablation setting')
 
 
-### Ablation setting for ours
+### Hyperparameters for ours_new
 parser.add_argument('--rst_min', default=None, type=float, help='Override rst_min value')
 parser.add_argument('--rst_max', default=None, type=float, help='Override rst_max value')
 parser.add_argument('--tao_begin', default=None, type=float, help='Override tao_begin value')

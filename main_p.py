@@ -65,6 +65,8 @@ FULL_CONFIG = {
     'EPHS': True,
     'FISR': True,
     'SR': False,
+    'EMA': True,
+    'Reset_student': True,
 }
 
 
@@ -120,6 +122,8 @@ def create_parser():
     parser.add_argument('--FISR', action='store_true', help='Enable Fisher-weighted SR')
     parser.add_argument('--SR', action='store_true', help='Enable basic SR')
     parser.add_argument('--MI', action='store_true', help='Enable MI loss')
+    parser.add_argument('--EMA', action='store_true', help='Enable EMA for Mean-Teacher')
+    parser.add_argument('--Reset_student', action='store_true', help='Reset student from teacher each epoch')
     parser.add_argument('--TOPK', action='store_false', help='the ablation setting')
     parser.add_argument('--PCA', action='store_false', help='the ablation setting')
 
@@ -227,6 +231,8 @@ def apply_config_to_args(args, config):
     args.EPHS = config['EPHS']
     args.FISR = config['FISR']
     args.SR = config['SR']
+    args.EMA = config['EMA']
+    args.Reset_student = config['Reset_student']
     return args
 
 

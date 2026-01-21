@@ -70,6 +70,8 @@ FULL_CONFIG = {
     'EPHS': True,
     'FISR': True,
     'SR': False,
+    'EMA': True,
+    'Reset_student': True,
 }
 
 # ============ Ablation Configurations ============
@@ -115,6 +117,18 @@ ABLATION_CONFIGS = [
     ('wo_allSR', 'Without any Stochastic Recovery', {
         'FISR': False,
         'SR': False,
+    }),
+    
+    # =============== Mean-Teacher 相关消融 ===============
+    # 移除 EMA (不使用 Mean-Teacher 框架，直接用 student 更新)
+    ('wo_EMA', 'Without EMA (no Mean-Teacher, student-only updates)', {
+        'EMA': False,
+        'CKCR': False,
+    }),
+    
+    # 移除 Reset_student (不在每个 epoch 后用 teacher 重置 student)
+    ('wo_Reset_student', 'Without resetting student from teacher each epoch', {
+        'Reset_student': False,
     }),
 ]
 
@@ -169,6 +183,8 @@ parser.add_argument('--EPHS', action='store_true', help='Enable EPHS')
 parser.add_argument('--FISR', action='store_true', help='Enable Fisher-weighted SR')
 parser.add_argument('--SR', action='store_true', help='Enable basic SR')
 parser.add_argument('--MI', action='store_true', help='Enable MI loss')
+parser.add_argument('--EMA', action='store_true', help='Enable EMA for Mean-Teacher')
+parser.add_argument('--Reset_student', action='store_true', help='Reset student from teacher each epoch')
 parser.add_argument('--TOPK', action='store_false', help='the ablation setting')
 parser.add_argument('--PCA', action='store_false', help='the ablation setting')
 
@@ -258,6 +274,8 @@ def apply_config_to_args(args, config):
     args.EPHS = config['EPHS']
     args.FISR = config['FISR']
     args.SR = config['SR']
+    args.EMA = config['EMA']
+    args.Reset_student = config['Reset_student']
     return args
 
 
