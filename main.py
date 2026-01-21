@@ -52,14 +52,16 @@ parser.add_argument('--nb_session', type=int, help='the number of sessions')
 ### Save all
 parser.add_argument('--save_model', action='store_true', help='the save setting')
 
-### Ablation setting for ours_simple
-parser.add_argument('--TOPK', action='store_false', help='the ablation setting')
-parser.add_argument('--PCA', action='store_false', help='the ablation setting')
-parser.add_argument('--MI', action='store_false', help='the ablation setting')
-parser.add_argument('--SR', action='store_false', help='the ablation setting')
+### Hyper-parameter setting for ours
+parser.add_argument('--rst_min', default=0.0005, type=float, help='Override rst_min value')
+parser.add_argument('--rst_max', default=0.01, type=float, help='Override rst_max value')
+parser.add_argument('--tao_begin', default=0.95, type=float, help='Override tao_begin value')
+parser.add_argument('--tao_end', default=0.99, type=float, help='Override tao_end value')
+
 
 ### Ablation setting for ours
 parser.add_argument('--mixup', action='store_false', help='the ablation setting')
+parser.add_argument('--MI', action='store_false', help='the ablation setting')
 # parser.add_argument('--sr_start', default=0.01, type=float, help='the sr_start for moving weight')
 # parser.add_argument('--sr_end', default=0.05, type=float, help='the sr_end for moving weight')
 

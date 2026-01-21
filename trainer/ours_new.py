@@ -284,7 +284,7 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
         confidence_gate_prev = gate_target
 
         # ===== rst from same conf =====
-        rst_min = getattr(args, "rst_min", 0.001)
+        rst_min = getattr(args, "rst_min", 0.0005)
         rst_max = getattr(args, "rst_max", 0.01)
         rst_target = rst_min + (rst_max - rst_min) * conf
         rst_ema_rho = getattr(args, "rst_ema_rho", 0.9)
@@ -293,7 +293,7 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
         rst_prev = float(rst)
 
         # ===== tao from same conf =====
-        tao_min = getattr(args, "tao_begin", 0.95)
+        tao_min = getattr(args, "tao_begin", 0.97)
         tao_max = getattr(args, "tao_end", 0.99)
         tao_target = tao_min + (tao_max - tao_min) * conf
         tao_target = float(max(0.0, min(0.9999, tao_target)))
