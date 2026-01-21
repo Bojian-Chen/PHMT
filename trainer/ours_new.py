@@ -9,53 +9,6 @@ import torchvision.transforms as transforms
 from utils.eval import *
 from utils.Fisher import Fisher, Fisher_Entropy
 
-# @torch.no_grad()
-# def diff_weighted_sr(
-#     model: nn.Module,
-#     ref_state: dict,
-#     teacher_model: nn.Module,
-#     rst: float,
-#     eps: float = 1e-8,
-#     clip_min: float = 0.0,
-#     clip_max: float = 1.0,
-#     use_abs: bool = True,
-# ):
-#     """
-#     Diff-weighted SR (teacher-student disagreement):
-#       d_i = |theta_student_i - theta_teacher_i|
-#       prob_i = clamp(rst * d_i / mean(d_i), 0, 1)
-#       mask ~ Bernoulli(prob_i)
-#       theta_student <- ref_state * mask + theta_student * (1-mask)
-
-#     Args:
-#       model:         student model to be recovered (SR applied here).
-#       ref_state:     anchor state dict (e.g., old_state_backbone).
-#       teacher_model: teacher/EMA model providing reference params.
-#       rst:           base recovery rate (scalar).
-#     """
-#     # Build teacher param dict (fast lookup by name)
-#     teacher_params = {n: p for n, p in teacher_model.named_parameters()}
-
-#     for name, p in model.named_parameters():
-#         if (not p.requires_grad) or (name not in teacher_params) or (name not in ref_state):
-#             continue
-
-#         pt = teacher_params[name].data.to(p.device, dtype=p.data.dtype)
-#         ps = p.data
-
-#         d = (ps - pt)
-#         if use_abs:
-#             d = d.abs()
-
-#         # normalize for stable scale
-#         mean_d = d.mean()
-#         prob = (rst * (d / (mean_d + eps))).clamp(clip_min, clip_max)
-
-#         mask = (torch.rand_like(ps) < prob).to(ps.dtype)
-#         anchor = ref_state[name].to(p.device, dtype=ps.dtype)
-
-#         p.data = anchor * mask + ps * (1.0 - mask)
-
 @torch.no_grad()
 def init_fisher(model: nn.Module):
     """Diagonal Fisher buffer (same shape as params)."""
@@ -181,42 +134,39 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
 
             # use teacher model to do predict
             # Mixup with teacher model
-            if args.mixup:
+            if args.CKCR:
                 with torch.no_grad():
                     score = teacher_classifier(teacher_backbone(inputs))
-
-                    prob_t = torch.softmax(score, dim=1)
-                    ent = -torch.sum(prob_t * torch.log(prob_t + 1e-12), dim=1)  # [B]
-                    # print("Entropy min/max/mean:", ent.min().item(), ent.max().item(), ent.mean().item())
-                    epoch_ent_sum += ent.sum().item()
-                    epoch_ent_n += ent.numel()
-                    epoch_num_classes = score.size(1)
-
-                    # knowledge, knowledge_mask = distill_knowledge(score, confidence_gate, temperature=2)
+                if args.select_soft_knowledge:
                     knowledge, knowledge_mask = distill_knowledge_by_entropy(score, confidence_gate, temperature=2)
-
-                if beta > 0:
-                    lam = np.random.beta(beta, beta)
-                    lam = max(lam, 1 - lam)
                 else:
-                    lam = 1
-                batch_size = inputs.size(0)
-                index = torch.randperm(batch_size).cuda()
-                mixed_data = lam * inputs + (1 - lam) * inputs[index, :]
-                mixed_consensus = lam * knowledge + (1 - lam) * knowledge[index, :]
+                    knowledge, knowledge_mask = distill_knowledge_by_entropy(score,  float(torch.log(torch.tensor(args.nb_cl)).item()), temperature=2)
+
+                if args.mixup:
+                    if beta > 0:
+                        lam = np.random.beta(beta, beta)
+                        lam = max(lam, 1 - lam)
+                    else:
+                        lam = 1
+                    batch_size = inputs.size(0)
+                    index = torch.randperm(batch_size).cuda()
+                    mixed_data = lam * inputs + (1 - lam) * inputs[index, :]
+                    mixed_consensus = lam * knowledge + (1 - lam) * knowledge[index, :]
+                else:
+                    mixed_data = inputs
+                    mixed_consensus = knowledge
             else:
                 with torch.no_grad():
                     score = teacher_classifier(teacher_backbone(inputs))
-
-                    prob_t = torch.softmax(score, dim=1)
-                    ent = -torch.sum(prob_t * torch.log(prob_t + 1e-12), dim=1)  # [B]
-                    epoch_ent_sum += ent.sum().item()
-                    epoch_ent_n += ent.numel()
-                    epoch_num_classes = score.size(1)
-
-                    knowledge, knowledge_mask = distill_knowledge(score, 0, temperature=1)
+                    knowledge, knowledge_mask = distill_knowledge_by_entropy(score, float(torch.log(torch.tensor(args.nb_cl)).item()), temperature=1)
                 mixed_data = inputs
                 mixed_consensus = knowledge
+
+            prob_t = torch.softmax(score, dim=1)
+            ent = -torch.sum(prob_t * torch.log(prob_t + 1e-12), dim=1)  # [B]
+            epoch_ent_sum += ent.sum().item()
+            epoch_ent_n += ent.numel()
+            epoch_num_classes = score.size(1)
 
             mixed_output = student_classifier(student_backbone(mixed_data))
             mixed_softmax = torch.softmax(mixed_output, dim=1)
@@ -271,70 +221,55 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
         else:
             conf = 0.0  # fallback: very uncertain
 
-        # ===== update confidence_gate for NEXT epoch =====
-        # gate_target = gate_min + (gate_max - gate_min) * conf
-        # gate_target = 0.4 * H_max + (gate_min - 0.4 * H_max) * conf
-        gate_target = u * H_max
+        if args.EPHS:
+            gate_target = u * H_max
+            confidence_gate_prev = gate_target
 
-        # if epoch == 0:
-        #     confidence_gate_prev = gate_target
-        # else:
-        #     confidence_gate_prev = gate_ema_rho * confidence_gate_prev + (1.0 - gate_ema_rho) * gate_target
-        # confidence_gate_prev = float(max(gate_min, min(gate_max, confidence_gate_prev)))
-        confidence_gate_prev = gate_target
+            # ===== rst from same conf =====
+            rst_min = getattr(args, "rst_min", 0.001)
+            rst_max = getattr(args, "rst_max", 0.01)
+            rst_target = rst_min + (rst_max - rst_min) * conf
+            rst_ema_rho = getattr(args, "rst_ema_rho", 0.9)
+            rst = rst_target
+            rst_prev = float(rst)
 
-        # ===== rst from same conf =====
-        rst_min = getattr(args, "rst_min", 0.001)
-        rst_max = getattr(args, "rst_max", 0.01)
-        rst_target = rst_min + (rst_max - rst_min) * conf
-        rst_ema_rho = getattr(args, "rst_ema_rho", 0.9)
-        # rst = rst_target if (rst_prev is None) else (rst_ema_rho * rst_prev + (1 - rst_ema_rho) * rst_target)
-        rst = rst_target
-        rst_prev = float(rst)
+            # ===== tao from same conf =====
+            tao_min = getattr(args, "tao_begin", 0.95)
+            tao_max = getattr(args, "tao_end", 0.99)
+            tao_target = tao_min + (tao_max - tao_min) * conf
+            tao_target = float(max(0.0, min(0.9999, tao_target)))
+            tao_ema_rho = getattr(args, "tao_ema_rho", 0.9)
+            tao = tao_target
+            tao_prev = float(tao)
 
-        # ===== tao from same conf =====
-        tao_min = getattr(args, "tao_begin", 0.95)
-        tao_max = getattr(args, "tao_end", 0.99)
-        tao_target = tao_min + (tao_max - tao_min) * conf
-        tao_target = float(max(0.0, min(0.9999, tao_target)))
-        tao_ema_rho = getattr(args, "tao_ema_rho", 0.9)
-        # tao = tao_target if (tao_prev is None) else (tao_ema_rho * tao_prev + (1 - tao_ema_rho) * tao_target)
-        tao = tao_target
-        tao_prev = float(tao)
+            print(f"Epoch {epoch}: conf={conf:.4f}, gate(now)={confidence_gate:.3f}, gate(next)={confidence_gate_prev:.3f}, rst={rst:.4f}, tao={tao:.4f}")
+        else:
+            confidence_gate_prev = confidence_gate
+            rst = 0.01
+            tao = 0.95
 
-        print(f"Epoch {epoch}: conf={conf:.4f}, gate(now)={confidence_gate:.3f}, gate(next)={confidence_gate_prev:.3f}, rst={rst:.4f}, tao={tao:.4f}")
-
-
-        # if args.dual:
         new_bn_statistics = get_bn_statistics(student_backbone.state_dict())
-        # tao_begin = 0.95
-        # tao_end = 0.99
-        # tao_begin = args.tao_begin
-        # tao_end = args.tao_end
-        # fisher_weighted_sr(student_backbone, old_state_backbone, fishers, rst=rst)
         
         bn_statistics_moving_average(old_bn_statistics, new_bn_statistics, epoch, args.epochs,tao_begin=tao, tao_end=tao) 
         exponential_moving_average(teacher_backbone, student_backbone, epoch, args.epochs,tao_begin=tao, tao_end=tao)
         exponential_moving_average(teacher_classifier, student_classifier, epoch, args.epochs,tao_begin=tao, tao_end=tao)
-
-        fisher_weighted_sr(teacher_backbone, old_state_backbone, fishers, rst=rst)
-        # if args.SR:
-        #     # rst = moving_weight(epoch, args.epochs, 0.01, 0.05)
-        #     rst = moving_weight(epoch, args.epochs, args.sr_start, args.sr_end)
-        #     for nm, m in teacher_backbone.named_modules():
-        #         for npp, p in m.named_parameters():
-        #             if npp in ['weight', 'bias'] and p.requires_grad:
-        #                 mask = (torch.rand(p.shape) < rst).float().cuda()
-        #                 with torch.no_grad():
-        #                     p.data = old_state_backbone[f"{nm}.{npp}"] * mask + p * (1. - mask)
-        #     for nm, m in teacher_classifier.named_modules():
-        #         for npp, p in m.named_parameters():
-        #             if npp in ['weight', 'bias'] and p.requires_grad:
-        #                 mask = (torch.rand(p.shape) < rst).float().cuda()
-        #                 with torch.no_grad():
-        #                     p.data = old_state_classifier[f"{nm}.{npp}"] * mask + p * (1. - mask)
-        # else:
-        #     pass
+        if args.FISR:
+            fisher_weighted_sr(teacher_backbone, old_state_backbone, fishers, rst=rst)
+        elif args.SR:
+            for nm, m in teacher_backbone.named_modules():
+                for npp, p in m.named_parameters():
+                    if npp in ['weight', 'bias'] and p.requires_grad:
+                        mask = (torch.rand(p.shape) < rst).float().cuda()
+                        with torch.no_grad():
+                            p.data = old_state_backbone[f"{nm}.{npp}"] * mask + p * (1. - mask)
+            for nm, m in teacher_classifier.named_modules():
+                for npp, p in m.named_parameters():
+                    if npp in ['weight', 'bias'] and p.requires_grad:
+                        mask = (torch.rand(p.shape) < rst).float().cuda()
+                        with torch.no_grad():
+                            p.data = old_state_classifier[f"{nm}.{npp}"] * mask + p * (1. - mask)
+        else:
+            pass
 
         # if args.SR:
         #     # rst = moving_weight(epoch, args.epochs, 0.01, 0.05)

@@ -3,12 +3,24 @@
 """
 @author: Chen Bojian
 Ablation study for ours_new method.
-Ablatable components:
-  1. Mixup - 数据混合增强
-  2. MI - 互信息损失
-  3. EMA - 指数移动平均更新
-  4. SR - Fisher加权随机恢复
-  5. Adaptive - 自适应置信度/参数调节
+
+Component Hierarchy:
+===================
+Full Method = KD + CKCR + select_soft_knowledge + mixup + MI + EPHS + FISR + EMA
+
+1. KD (Knowledge Distillation) - 基础，始终存在
+   └── CKCR (Confidence-based Knowledge Consensus Regularization)
+       ├── select_soft_knowledge (自适应熵门控，依赖CKCR)
+       └── mixup (数据混合，依赖CKCR)
+2. MI (Mutual Information loss) - 独立模块
+3. EPHS (Entropy-aware Parameter Harmonization Scheduling) - 独立模块
+   - 控制自适应 gate, rst, tao
+4. EMA (Exponential Moving Average) - 始终运行，tao控制强度
+5. FISR vs SR (互斥) - 随机恢复策略
+
+Ablation Types:
+- wo_X: 完整模型移除组件X (验证X的贡献)
+- progressive: 从最小模型逐步添加组件
 """
 import numpy as np
 import argparse
@@ -19,99 +31,90 @@ from datetime import datetime
 from utils.set import set_random_seed
 from utils.eval_metric import eval_metric
 from trainer.trainer import train
+import copy
+
+# ============ Dataset Domain Sequences ============
+DATASET_DOMAIN_SEQS = {
+    'SK': [
+        np.array([6,1,8,15,22,17]),
+        np.array([1,6,8,15,22,17]),
+        np.array([6,8,1,15,22,17]),
+        np.array([6,1,15,8,22,17]),
+        np.array([6,1,8,22,15,17]),
+        np.array([6,1,8,15,17,22])
+    ],
+    'iFlytek': [
+        np.array([2,3,4,5,7]),
+        np.array([3,2,4,5,7]),
+        np.array([2,4,3,5,7]),
+        np.array([2,3,5,4,7]),
+        np.array([2,3,4,7,5])
+    ],
+    'WT': [
+        np.array([0,1,2,3,4]),
+        np.array([1,0,2,3,4]),
+        np.array([0,2,1,3,4]),
+        np.array([0,1,3,2,4]),
+        np.array([0,1,2,4,3]),
+    ],
+}
+
+RANDOM_SEEDS = [2023,2024,2025]
+
+# ============ Full Model Configuration ============
+FULL_CONFIG = {
+    'CKCR': True,
+    'select_soft_knowledge': True,
+    'mixup': True,
+    'MI': True,
+    'EPHS': True,
+    'FISR': True,
+    'SR': False,
+}
 
 # ============ Ablation Configurations ============
-# Each config: (name, description, args_dict)
+# Format: (name, description, config_overrides)
 ABLATION_CONFIGS = [
-    # Full model (baseline)
-    ('Full', 'Full model with all components', {
-        'ablation_mixup': True,
-        'ablation_MI': True,
-        'ablation_EMA': True,
-        'ablation_SR': True,
-        'ablation_adaptive': True,
+    # =============== 单组件移除 (Component-wise Ablation) ===============
+    # 验证每个组件的独立贡献
+    
+    # 移除 CKCR (同时失去 select_soft_knowledge 和 mixup)
+    ('wo_CKCR', 'Without CKCR (fallback to basic KD)', {
+        'CKCR': False,
+        'select_soft_knowledge': False,  # 依赖CKCR
+        'mixup': False,  # 依赖CKCR
     }),
     
-    # Remove individual components
-    ('wo_Mixup', 'Without Mixup augmentation', {
-        'ablation_mixup': False,
-        'ablation_MI': True,
-        'ablation_EMA': True,
-        'ablation_SR': True,
-        'ablation_adaptive': True,
+    # 移除 select_soft_knowledge (保留CKCR和mixup)
+    ('wo_soft_knowledge', 'Without adaptive entropy gate', {
+        'select_soft_knowledge': False,
     }),
     
+    # 移除 mixup (保留CKCR和select_soft_knowledge)
+    ('wo_mixup', 'Without mixup augmentation', {
+        'mixup': False,
+    }),
+    
+    # 移除 MI
     ('wo_MI', 'Without Mutual Information loss', {
-        'ablation_mixup': True,
-        'ablation_MI': False,
-        'ablation_EMA': True,
-        'ablation_SR': True,
-        'ablation_adaptive': True,
+        'MI': False,
     }),
     
-    ('wo_EMA', 'Without EMA update', {
-        'ablation_mixup': True,
-        'ablation_MI': True,
-        'ablation_EMA': False,
-        'ablation_SR': True,
-        'ablation_adaptive': True,
+    # 移除 EPHS (使用固定参数)
+    ('wo_EPHS', 'Without adaptive parameter scheduling', {
+        'EPHS': False,
     }),
     
-    ('wo_SR', 'Without Stochastic Recovery', {
-        'ablation_mixup': True,
-        'ablation_MI': True,
-        'ablation_EMA': True,
-        'ablation_SR': False,
-        'ablation_adaptive': True,
+    # 移除 FISR (用基础SR替代)
+    ('wo_FISR', 'Without Fisher-weighted SR (use basic SR instead)', {
+        'FISR': False,
+        'SR': True,
     }),
     
-    ('wo_Adaptive', 'Without Adaptive parameter adjustment', {
-        'ablation_mixup': True,
-        'ablation_MI': True,
-        'ablation_EMA': True,
-        'ablation_SR': True,
-        'ablation_adaptive': False,
-    }),
-    
-    # Progressive ablation (cumulative removal)
-    ('only_KD', 'Only Knowledge Distillation (no Mixup, MI, EMA, SR, Adaptive)', {
-        'ablation_mixup': False,
-        'ablation_MI': False,
-        'ablation_EMA': False,
-        'ablation_SR': False,
-        'ablation_adaptive': False,
-    }),
-    
-    ('KD_Mixup', 'KD + Mixup only', {
-        'ablation_mixup': True,
-        'ablation_MI': False,
-        'ablation_EMA': False,
-        'ablation_SR': False,
-        'ablation_adaptive': False,
-    }),
-    
-    ('KD_Mixup_MI', 'KD + Mixup + MI', {
-        'ablation_mixup': True,
-        'ablation_MI': True,
-        'ablation_EMA': False,
-        'ablation_SR': False,
-        'ablation_adaptive': False,
-    }),
-    
-    ('KD_Mixup_MI_EMA', 'KD + Mixup + MI + EMA', {
-        'ablation_mixup': True,
-        'ablation_MI': True,
-        'ablation_EMA': True,
-        'ablation_SR': False,
-        'ablation_adaptive': False,
-    }),
-    
-    ('KD_Mixup_MI_EMA_SR', 'KD + Mixup + MI + EMA + SR (no Adaptive)', {
-        'ablation_mixup': True,
-        'ablation_MI': True,
-        'ablation_EMA': True,
-        'ablation_SR': True,
-        'ablation_adaptive': False,
+    # 移除所有SR (FISR和SR都不用)
+    ('wo_allSR', 'Without any Stochastic Recovery', {
+        'FISR': False,
+        'SR': False,
     }),
 ]
 
@@ -158,134 +161,105 @@ parser.add_argument('--nb_session', type=int, help='the number of sessions')
 ### Save all
 parser.add_argument('--save_model', action='store_true', help='the save setting')
 
-### Ablation settings (controlled by ABLATION_CONFIGS)
-parser.add_argument('--mixup', action='store_false', help='the mixup setting')
-parser.add_argument('--MI', action='store_false', help='the MI loss setting')
+### Ablation flags (used by ours_new.py)
+parser.add_argument('--CKCR', action='store_true', help='Enable CKCR')
+parser.add_argument('--select_soft_knowledge', action='store_true', help='Enable soft knowledge selection')
+parser.add_argument('--mixup', action='store_true', help='Enable mixup')
+parser.add_argument('--EPHS', action='store_true', help='Enable EPHS')
+parser.add_argument('--FISR', action='store_true', help='Enable Fisher-weighted SR')
+parser.add_argument('--SR', action='store_true', help='Enable basic SR')
+parser.add_argument('--MI', action='store_true', help='Enable MI loss')
 parser.add_argument('--TOPK', action='store_false', help='the ablation setting')
 parser.add_argument('--PCA', action='store_false', help='the ablation setting')
-parser.add_argument('--SR', action='store_false', help='the ablation setting')
 
-### Ablation experiment settings
-parser.add_argument('--ablation_config', default=None, type=str, help='Specific ablation config to run (e.g., "wo_Mixup")')
-parser.add_argument('--output_dir', default='./log/ablation/', type=str, help='Output directory for results')
-parser.add_argument('--run_all', action='store_true', help='Run all ablation configurations')
-
-### Hyperparameters (use defaults from sensitivity experiments)
+### Hyperparameters
 parser.add_argument('--rst_min', default=0.001, type=float, help='rst_min for SR')
 parser.add_argument('--rst_max', default=0.01, type=float, help='rst_max for SR')
 parser.add_argument('--tao_begin', default=0.95, type=float, help='tao_begin for EMA')
 parser.add_argument('--tao_end', default=0.99, type=float, help='tao_end for EMA')
 
-### Ablation control flags
-parser.add_argument('--ablation_mixup', default=True, type=lambda x: x.lower() == 'true', help='Enable Mixup')
-parser.add_argument('--ablation_MI', default=True, type=lambda x: x.lower() == 'true', help='Enable MI loss')
-parser.add_argument('--ablation_EMA', default=True, type=lambda x: x.lower() == 'true', help='Enable EMA')
-parser.add_argument('--ablation_SR', default=True, type=lambda x: x.lower() == 'true', help='Enable SR')
-parser.add_argument('--ablation_adaptive', default=True, type=lambda x: x.lower() == 'true', help='Enable Adaptive')
+### Ablation experiment settings
+parser.add_argument('--ablation_config', default=None, type=str, help='Specific ablation config to run')
+parser.add_argument('--output_dir', default='./log/ablation/', type=str, help='Output directory')
+parser.add_argument('--run_all_datasets', action='store_true', help='Run on all 3 datasets')
+parser.add_argument('--run_multi_seed', action='store_true', help='Run with multiple seeds')
+parser.add_argument('--run_multi_domain', action='store_true', help='Run with multiple domain sequences')
 
-### Get all the arguments
 args = parser.parse_args()
 
-### Set specific arguments for different models
-if args.backbone_name == 'cnn' or args.backbone_name == 'resnet18_1D':
-    args.data_dimension = '1D'
-    args.data_mode = 'Time'
 
-if args.backbone_name == 'resnet14' or args.backbone_name == 'resnet32':
-    args.data_dimension = '2D'
-    args.data_mode = 'Frequence'
-
-### Set specific arguments for different datasets
-if args.dataset_name == 'SK':
-    args.train_list = './SK_all_10classes.mat'
-    args.test_list = './SK_all_10classes.mat'
-    args.Domain_Seq = np.array([6,1,8,15,22,17])
-    args.nb_session = len(args.Domain_Seq)
-    args.nb_cl = 10
-
-if args.dataset_name == 'SK_new':
-    args.train_list = './SK_new_all_10classes.mat'
-    args.test_list = './SK_new_all_10classes.mat'
-    args.Domain_Seq = np.array([6,1,8,15,22,17]) 
-    args.nb_session = len(args.Domain_Seq)
-    args.nb_cl = 10
-
-if args.dataset_name == 'HUST':
-    args.train_list = './HUST_Bearings_10domains_9classes.mat'
-    args.test_list = './HUST_Bearings_10domains_9classes.mat'
-    args.Domain_Seq = np.array([5,6,7,8]) 
-    args.nb_session = len(args.Domain_Seq)
-    args.nb_cl = 9
-
-if args.dataset_name == 'iFlytek':
-    args.batch_size = 64
-    args.train_list = './iFlytek_all_5classes.mat'
-    args.test_list = './iFlytek_all_5classes.mat'
-    args.Domain_Seq = np.array([2,3,4,5,7])
-    args.nb_session = len(args.Domain_Seq)
-    args.nb_cl = 5
-
-if args.dataset_name == 'WT':
-    args.batch_size = 128
-    args.train_list = './WT_all_5classes.mat'
-    args.test_list = './WT_all_5classes.mat'
-    args.Domain_Seq = np.array([0,1,2,3,4]) 
-    args.nb_session = len(args.Domain_Seq)
-    args.nb_cl = 5
-
-if args.dataset_name == 'PU_Real':
-    args.train_list = './PU_Real_4doamins_5classes.mat'
-    args.test_list = './PU_Real_4doamins_5classes.mat'
-    args.Domain_Seq = np.array([3,2,0,1])  
-    args.nb_session = len(args.Domain_Seq)
-    args.nb_cl = 5
-
-if args.dataset_name == 'PU_Art':
-    args.train_list = './PU_Art_4doamins_8classes.mat'
-    args.test_list = './PU_Art_4doamins_8classes.mat'
-    args.Domain_Seq = np.array([2,0])  
-    args.nb_session = len(args.Domain_Seq)
-    args.nb_cl = 8
-
-
-def apply_ablation_config(args, config_dict):
-    """Apply ablation configuration to args."""
-    # Map ablation flags to actual model parameters
-    args.mixup = config_dict.get('ablation_mixup', True)
-    args.MI = config_dict.get('ablation_MI', True)
-    args.ablation_EMA = config_dict.get('ablation_EMA', True)
-    args.ablation_SR = config_dict.get('ablation_SR', True)
-    args.ablation_adaptive = config_dict.get('ablation_adaptive', True)
+def setup_dataset_args(args, dataset_name, domain_seq=None):
+    """Setup dataset-specific arguments."""
+    args.dataset_name = dataset_name
     
-    # If EMA is disabled, set tao to 0 (no momentum)
-    if not args.ablation_EMA:
-        args.tao_begin = 0.0
-        args.tao_end = 0.0
+    if dataset_name == 'SK':
+        args.train_list = './SK_all_10classes.mat'
+        args.test_list = './SK_all_10classes.mat'
+        args.Domain_Seq = domain_seq if domain_seq is not None else np.array([6,1,8,15,22,17])
+        args.nb_session = len(args.Domain_Seq)
+        args.nb_cl = 10
+        args.batch_size = 64
+        
+    elif dataset_name == 'iFlytek':
+        args.train_list = './iFlytek_all_5classes.mat'
+        args.test_list = './iFlytek_all_5classes.mat'
+        args.Domain_Seq = domain_seq if domain_seq is not None else np.array([2,3,4,5,7])
+        args.nb_session = len(args.Domain_Seq)
+        args.nb_cl = 5
+        args.batch_size = 64
+        
+    elif dataset_name == 'WT':
+        args.train_list = './WT_all_5classes.mat'
+        args.test_list = './WT_all_5classes.mat'
+        args.Domain_Seq = domain_seq if domain_seq is not None else np.array([0,1,2,3,4])
+        args.nb_session = len(args.Domain_Seq)
+        args.nb_cl = 5
+        args.batch_size = 128
     
-    # If SR is disabled, set rst to 0 (no recovery)
-    if not args.ablation_SR:
-        args.rst_min = 0.0
-        args.rst_max = 0.0
-    
-    # If Adaptive is disabled, use fixed values
-    if not args.ablation_adaptive:
-        args.fixed_conf = True
-    else:
-        args.fixed_conf = False
+    # Set model-specific args
+    if args.backbone_name == 'cnn' or args.backbone_name == 'resnet18_1D':
+        args.data_dimension = '1D'
+        args.data_mode = 'Time'
+    if args.backbone_name == 'resnet14' or args.backbone_name == 'resnet32':
+        args.data_dimension = '2D'
+        args.data_mode = 'Frequence'
     
     return args
 
 
-def run_single_ablation(args, config_name, config_desc, config_dict):
+def build_config(overrides):
+    """Build full config by applying overrides to FULL_CONFIG."""
+    config = FULL_CONFIG.copy()
+    config.update(overrides)
+    return config
+
+
+def apply_config_to_args(args, config):
+    """Apply configuration dict to args."""
+    args.CKCR = config['CKCR']
+    args.select_soft_knowledge = config['select_soft_knowledge']
+    args.mixup = config['mixup']
+    args.MI = config['MI']
+    args.EPHS = config['EPHS']
+    args.FISR = config['FISR']
+    args.SR = config['SR']
+    return args
+
+
+def run_single_experiment(args, config_name, config, dataset_name, seed, domain_seq):
     """Run a single ablation experiment."""
-    print(f"\n{'='*80}")
-    print(f"Ablation: {config_name}")
-    print(f"Description: {config_desc}")
-    print(f"Config: {config_dict}")
-    print(f"{'='*80}")
+    # Setup
+    args = setup_dataset_args(args, dataset_name, domain_seq)
+    args.random_seed = seed
+    set_random_seed(seed)
+    args = apply_config_to_args(args, config)
     
-    # Apply configuration
-    args = apply_ablation_config(args, config_dict)
+    print(f"\n{'='*80}")
+    print(f"Config: {config_name} | Dataset: {dataset_name} | Seed: {seed}")
+    print(f"Domain_Seq: {domain_seq}")
+    print(f"CKCR={args.CKCR}, soft={args.select_soft_knowledge}, mixup={args.mixup}, "
+          f"MI={args.MI}, EPHS={args.EPHS}, FISR={args.FISR}, SR={args.SR}")
+    print(f"{'='*80}")
     
     # Run training
     Correct = train(args)
@@ -295,12 +269,16 @@ def run_single_ablation(args, config_name, config_desc, config_dict):
     
     return {
         'config_name': config_name,
-        'config_desc': config_desc,
-        'mixup': config_dict.get('ablation_mixup', True),
-        'MI': config_dict.get('ablation_MI', True),
-        'EMA': config_dict.get('ablation_EMA', True),
-        'SR': config_dict.get('ablation_SR', True),
-        'Adaptive': config_dict.get('ablation_adaptive', True),
+        'dataset': dataset_name,
+        'seed': seed,
+        'domain_seq': str(domain_seq.tolist()),
+        'CKCR': config['CKCR'],
+        'select_soft_knowledge': config['select_soft_knowledge'],
+        'mixup': config['mixup'],
+        'MI': config['MI'],
+        'EPHS': config['EPHS'],
+        'FISR': config['FISR'],
+        'SR': config['SR'],
         'AP': AP,
         'AF': AF,
         'AMF': AMF,
@@ -314,121 +292,139 @@ def run_single_ablation(args, config_name, config_desc, config_dict):
 def main():
     """Main function for ablation study."""
     
-    # Set random seed
-    set_random_seed(args.random_seed)
+    # Determine datasets to run
+    if args.run_all_datasets:
+        datasets = ['SK', 'iFlytek', 'WT']
+    else:
+        datasets = [args.dataset_name]
     
-    # Create output directory
+    # Create output directory per dataset
     output_dir = os.path.join(args.output_dir, args.dataset_name)
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     
-    # Determine which configs to run
+    # Determine seeds
+    if args.run_multi_seed:
+        seeds = RANDOM_SEEDS
+    else:
+        seeds = [args.random_seed]
+    
+    # Determine configs to run
     if args.ablation_config:
-        # Run specific config
-        configs_to_run = [(name, desc, cfg) for name, desc, cfg in ABLATION_CONFIGS 
+        configs_to_run = [(name, desc, build_config(overrides)) 
+                          for name, desc, overrides in ABLATION_CONFIGS 
                           if name == args.ablation_config]
         if not configs_to_run:
             print(f"Error: Unknown ablation config '{args.ablation_config}'")
             print(f"Available configs: {[c[0] for c in ABLATION_CONFIGS]}")
             return
     else:
-        # Run all configs
-        configs_to_run = ABLATION_CONFIGS
+        configs_to_run = [(name, desc, build_config(overrides)) 
+                          for name, desc, overrides in ABLATION_CONFIGS]
     
-    print(f"\nAblation Study Configuration")
-    print(f"{'='*60}")
-    print(f"Dataset: {args.dataset_name}")
-    print(f"Backbone: {args.backbone_name}")
-    print(f"Configs to run: {len(configs_to_run)}")
+    print(f"\n{'='*80}")
+    print("ABLATION STUDY CONFIGURATION")
+    print(f"{'='*80}")
+    print(f"Datasets: {datasets}")
+    print(f"Seeds: {seeds}")
+    print(f"Multi-domain: {args.run_multi_domain}")
+    print(f"Configs: {[c[0] for c in configs_to_run]}")
     print(f"Output: {output_dir}")
+    
+    # Calculate total experiments
+    total_exps = 0
+    for dataset in datasets:
+        n_domain = len(DATASET_DOMAIN_SEQS.get(dataset, [None])) if args.run_multi_domain else 1
+        total_exps += len(configs_to_run) * len(seeds) * n_domain
+    print(f"Total experiments: {total_exps}")
     
     # Store results
     results = []
+    exp_count = 0
     
-    # Run experiments
     time_start = time.time()
-    for idx, (config_name, config_desc, config_dict) in enumerate(configs_to_run):
-        print(f"\n>>> Ablation {idx+1}/{len(configs_to_run)}: {config_name}")
-        
-        try:
-            # Reset args for each experiment
-            args.rst_min = 0.001
-            args.rst_max = 0.01
-            args.tao_begin = 0.95
-            args.tao_end = 0.99
+    
+    for config_name, config_desc, config in configs_to_run:
+        for dataset in datasets:
+            # Get domain sequences for this dataset
+            if args.run_multi_domain and dataset in DATASET_DOMAIN_SEQS:
+                domain_seqs = DATASET_DOMAIN_SEQS[dataset]
+            else:
+                domain_seqs = [DATASET_DOMAIN_SEQS[dataset][0] if dataset in DATASET_DOMAIN_SEQS else None]
             
-            result = run_single_ablation(args, config_name, config_desc, config_dict)
-            results.append(result)
-            
-            # Save intermediate results
-            df = pd.DataFrame(results)
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            intermediate_file = os.path.join(output_dir, f'ablation_results_intermediate_{timestamp}.csv')
-            df.to_csv(intermediate_file, index=False)
-            print(f"Intermediate results saved to: {intermediate_file}")
-            
-        except Exception as e:
-            print(f"Error in ablation {config_name}: {e}")
-            import traceback
-            traceback.print_exc()
-            results.append({
-                'config_name': config_name,
-                'config_desc': config_desc,
-                'mixup': config_dict.get('ablation_mixup', True),
-                'MI': config_dict.get('ablation_MI', True),
-                'EMA': config_dict.get('ablation_EMA', True),
-                'SR': config_dict.get('ablation_SR', True),
-                'Adaptive': config_dict.get('ablation_adaptive', True),
-                'AP': None,
-                'AF': None,
-                'AMF': None,
-                'AG': None,
-                'AA': None,
-                'BWT': None,
-                'ACC': None,
-                'error': str(e)
-            })
+            for domain_seq in domain_seqs:
+                for seed in seeds:
+                    exp_count += 1
+                    print(f"\n>>> Experiment {exp_count}/{total_exps}")
+                    
+                    try:
+                        # Create fresh args copy
+                        exp_args = copy.deepcopy(args)
+                        result = run_single_experiment(exp_args, config_name, config, 
+                                                       dataset, seed, domain_seq)
+                        results.append(result)
+                        
+                        # Save intermediate results
+                        df = pd.DataFrame(results)
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        intermediate_file = os.path.join(output_dir, f'ablation_intermediate_{timestamp}.csv')
+                        df.to_csv(intermediate_file, index=False)
+                        
+                    except Exception as e:
+                        print(f"Error: {e}")
+                        import traceback
+                        traceback.print_exc()
+                        results.append({
+                            'config_name': config_name,
+                            'dataset': dataset,
+                            'seed': seed,
+                            'domain_seq': str(domain_seq.tolist()) if domain_seq is not None else 'None',
+                            'error': str(e)
+                        })
     
     time_end = time.time()
     
     # Save final results
     df = pd.DataFrame(results)
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    final_file = os.path.join(output_dir, f'ablation_results_final_{timestamp}.csv')
+    final_file = os.path.join(output_dir, f'ablation_final_{timestamp}.csv')
     df.to_csv(final_file, index=False)
     
-    # Print summary
+    # Compute and save mean results
+    print(f"\n{'='*80}")
+    print("COMPUTING MEAN RESULTS")
+    print(f"{'='*80}")
+    
+    metrics = ['AP', 'AF', 'AMF', 'AG', 'AA', 'BWT', 'ACC']
+    group_cols = ['config_name', 'dataset']
+    
+    # Filter valid results
+    valid_df = df[df['ACC'].notna()].copy()
+    
+    if not valid_df.empty:
+        # Compute mean and std
+        mean_df = valid_df.groupby(group_cols)[metrics].mean().reset_index()
+        std_df = valid_df.groupby(group_cols)[metrics].std().reset_index()
+        
+        # Rename columns
+        mean_df.columns = group_cols + [f'{m}_mean' for m in metrics]
+        std_df.columns = group_cols + [f'{m}_std' for m in metrics]
+        
+        # Merge
+        summary_df = pd.merge(mean_df, std_df, on=group_cols)
+        
+        # Save summary
+        summary_file = os.path.join(output_dir, f'ablation_summary_{timestamp}.csv')
+        summary_df.to_csv(summary_file, index=False)
+        
+        print(f"\nSummary saved to: {summary_file}")
+        print(summary_df[['config_name', 'dataset', 'ACC_mean', 'ACC_std', 'AP_mean', 'BWT_mean']].to_string(index=False))
+    
     print(f"\n{'='*80}")
     print("ABLATION STUDY COMPLETED")
     print(f"{'='*80}")
     print(f"Total time: {(time_end - time_start)/60:.2f} minutes")
-    print(f"Results saved to: {final_file}")
-    
-    # Print comparison table
-    print(f"\n{'='*80}")
-    print("ABLATION RESULTS COMPARISON")
-    print(f"{'='*80}")
-    cols_to_show = ['config_name', 'mixup', 'MI', 'EMA', 'SR', 'Adaptive', 'ACC', 'AP', 'AA', 'BWT']
-    print(df[cols_to_show].to_string(index=False))
-    
-    # Compute contribution of each component
-    print(f"\n{'='*80}")
-    print("COMPONENT CONTRIBUTION ANALYSIS")
-    print(f"{'='*80}")
-    
-    full_result = df[df['config_name'] == 'Full']
-    if not full_result.empty:
-        full_acc = full_result['ACC'].values[0]
-        for config_name in ['wo_Mixup', 'wo_MI', 'wo_EMA', 'wo_SR', 'wo_Adaptive']:
-            wo_result = df[df['config_name'] == config_name]
-            if not wo_result.empty:
-                wo_acc = wo_result['ACC'].values[0]
-                if wo_acc is not None and full_acc is not None:
-                    contribution = full_acc - wo_acc
-                    component = config_name.replace('wo_', '')
-                    print(f"  {component}: {contribution:+.2f}% (Full: {full_acc:.2f}% -> w/o: {wo_acc:.2f}%)")
-    
-    return df
+    print(f"Results: {final_file}")
 
 
 if __name__ == '__main__':

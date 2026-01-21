@@ -69,14 +69,16 @@ parser.add_argument('--nb_session', type=int, help='the number of sessions')
 ### Save all
 parser.add_argument('--save_model', action='store_true', help='the save setting')
 
-### Ablation setting for ours_simple
+### ours_new ablation flags
+parser.add_argument('--CKCR', action='store_true', help='Enable CKCR')
+parser.add_argument('--select_soft_knowledge', action='store_true', help='Enable soft knowledge selection')
+parser.add_argument('--mixup', action='store_true', help='Enable mixup')
+parser.add_argument('--EPHS', action='store_true', help='Enable EPHS')
+parser.add_argument('--FISR', action='store_true', help='Enable Fisher-weighted SR')
+parser.add_argument('--SR', action='store_true', help='Enable basic SR')
+parser.add_argument('--MI', action='store_true', help='Enable MI loss')
 parser.add_argument('--TOPK', action='store_false', help='the ablation setting')
 parser.add_argument('--PCA', action='store_false', help='the ablation setting')
-parser.add_argument('--MI', action='store_false', help='the ablation setting')
-parser.add_argument('--SR', action='store_false', help='the ablation setting')
-
-### Ablation setting for ours
-parser.add_argument('--mixup', action='store_false', help='the ablation setting')
 
 ### Grid search parameters
 parser.add_argument('--rst_min', default=None, type=float, help='Override rst_min value')
@@ -128,6 +130,20 @@ if args.incremental_mode == 'ours':
     args.PCL = False
     args.LabelSmooth = False
     args.contrastive_loss = False
+
+if args.incremental_mode == 'ours_new':
+    args.classifer = 'cos'
+    args.PCL = False
+    args.LabelSmooth = False
+    args.contrastive_loss = False
+    # Set default ours_new ablation flags for full model
+    args.CKCR = True
+    args.select_soft_knowledge = True
+    args.mixup = True
+    args.MI = True
+    args.EPHS = True
+    args.FISR = True
+    args.SR = False
 
 if args.incremental_mode == 'RaTP':
     args.classifer = 'cos'
