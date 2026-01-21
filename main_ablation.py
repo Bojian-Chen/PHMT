@@ -59,7 +59,8 @@ DATASET_DOMAIN_SEQS = {
     ],
 }
 
-RANDOM_SEEDS = [2023,2024,2025]
+RANDOM_SEEDS = [2021,2022,2023,2024,2025]
+# RANDOM_SEEDS = [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
 
 # ============ Full Model Configuration ============
 FULL_CONFIG = {
