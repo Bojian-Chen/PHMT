@@ -192,7 +192,7 @@ def setup_dataset_args(args, dataset_name, domain_seq=None):
         # Grid-search optimized hyperparameters for WT
         args.tao_begin = 0.9
         args.tao_end = 0.97
-        args.rst_min = 0.005
+        args.rst_min = 0.0005
         args.rst_max = 0.05
     
     elif dataset_name == 'PU_Real':
