@@ -65,12 +65,10 @@ parser.add_argument('--PCA', action='store_false', help='the ablation setting')
 
 
 ### Ablation setting for ours
-# parser.add_argument('--mixup', action='store_false', help='the ablation setting')
-# parser.add_argument('--sr_start', default=0.01, type=float, help='the sr_start for moving weight')
-# parser.add_argument('--sr_end', default=0.05, type=float, help='the sr_end for moving weight')
-
-# parser.add_argument('--tao_begin', default=0.95, type=float, help='the tao_begin for EMA')
-# parser.add_argument('--tao_end', default=0.99, type=float, help='the tao_end for EMA')
+parser.add_argument('--rst_min', default=None, type=float, help='Override rst_min value')
+parser.add_argument('--rst_max', default=None, type=float, help='Override rst_max value')
+parser.add_argument('--tao_begin', default=None, type=float, help='Override tao_begin value')
+parser.add_argument('--tao_end', default=None, type=float, help='Override tao_end value')
 
 
 
@@ -141,6 +139,11 @@ if args.dataset_name == 'SK':
     # args.Domain_Seq = np.array([0,1,8,15,22,17])  # 转速 负载 持续变化
     args.nb_session = len(args.Domain_Seq)
     args.nb_cl = 10
+    # Grid-search optimized hyperparameters for SK
+    args.tao_begin = 0.97
+    args.tao_end = 0.99
+    args.rst_min = 0.0005
+    args.rst_max = 0.01
 
 if args.dataset_name == 'SK_new':
     args.train_list = './SK_new_all_10classes.mat'
@@ -184,6 +187,11 @@ if args.dataset_name == 'iFlytek':
     # args.Domain_Seq = np.array([1,8,9,10,11,15,14,13,12,3])  # 声音信号
     args.nb_session = len(args.Domain_Seq)
     args.nb_cl = 5
+    # Grid-search optimized hyperparameters for iFlytek
+    args.tao_begin = 0.9
+    args.tao_end = 0.95
+    args.rst_min = 0.001
+    args.rst_max = 0.005
 
 if args.dataset_name == 'WT':
     args.batch_size = 128
@@ -195,6 +203,11 @@ if args.dataset_name == 'WT':
     # args.Domain_Seq = np.array([5,3,1,2,4]) 
     args.nb_session = len(args.Domain_Seq)
     args.nb_cl = 5
+    # Grid-search optimized hyperparameters for WT
+    args.tao_begin = 0.9
+    args.tao_end = 0.97
+    args.rst_min = 0.005
+    args.rst_max = 0.05
 
 if args.dataset_name == 'PU_Real':
     args.train_list = './PU_Real_4doamins_5classes.mat'

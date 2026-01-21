@@ -199,6 +199,11 @@ def setup_dataset_args(args, dataset_name, domain_seq=None):
         args.nb_session = len(args.Domain_Seq)
         args.nb_cl = 10
         args.batch_size = 64
+        # Grid-search optimized hyperparameters for SK
+        args.tao_begin = 0.97
+        args.tao_end = 0.99
+        args.rst_min = 0.0005
+        args.rst_max = 0.01
         
     elif dataset_name == 'iFlytek':
         args.train_list = './iFlytek_all_5classes.mat'
@@ -207,6 +212,11 @@ def setup_dataset_args(args, dataset_name, domain_seq=None):
         args.nb_session = len(args.Domain_Seq)
         args.nb_cl = 5
         args.batch_size = 64
+        # Grid-search optimized hyperparameters for iFlytek
+        args.tao_begin = 0.9
+        args.tao_end = 0.95
+        args.rst_min = 0.001
+        args.rst_max = 0.005
         
     elif dataset_name == 'WT':
         args.train_list = './WT_all_5classes.mat'
@@ -215,6 +225,11 @@ def setup_dataset_args(args, dataset_name, domain_seq=None):
         args.nb_session = len(args.Domain_Seq)
         args.nb_cl = 5
         args.batch_size = 128
+        # Grid-search optimized hyperparameters for WT
+        args.tao_begin = 0.9
+        args.tao_end = 0.97
+        args.rst_min = 0.005
+        args.rst_max = 0.05
     
     # Set model-specific args
     if args.backbone_name == 'cnn' or args.backbone_name == 'resnet18_1D':
