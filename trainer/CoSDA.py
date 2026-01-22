@@ -110,8 +110,8 @@ def CoSDA(args, teacher_backbone, teacher_classifier, student_backbone, student_
         exponential_moving_average(teacher_backbone, student_backbone, epoch, args.epochs,tao_begin=0.9, tao_end=0.99)
         exponential_moving_average(teacher_classifier, student_classifier, epoch, args.epochs,tao_begin=0.9, tao_end=0.99)
 
-        student_backbone.load_state_dict(teacher_backbone.state_dict())
-        student_classifier.load_state_dict(teacher_classifier.state_dict())
+        # student_backbone.load_state_dict(teacher_backbone.state_dict())
+        # student_classifier.load_state_dict(teacher_classifier.state_dict())
 
         # Learning rate decay
         backbone_scheduler.step()
@@ -123,8 +123,8 @@ def CoSDA(args, teacher_backbone, teacher_classifier, student_backbone, student_
             len(train_loader), train_loss/(batch_idx+1),  100.*correct/total))
 
         # Running the test for this epoch
-        student_backbone.eval()
-        student_classifier.eval()
+        teacher_backbone.eval()
+        teacher_classifier.eval()
 
         test_loss = 0
         correct = 0
@@ -133,8 +133,8 @@ def CoSDA(args, teacher_backbone, teacher_classifier, student_backbone, student_
         with torch.no_grad():
             for batch_idx, instance in enumerate(test_loader):
                 inputs, labels = instance[0].to(device), instance[1].to(device)
-                features = student_backbone(inputs)
-                outputs = student_classifier(features)
+                features = teacher_backbone(inputs)
+                outputs = teacher_classifier(features)
                 loss = nn.CrossEntropyLoss()(outputs, labels)
                 test_loss += loss.item()
                 _, predicted = outputs.max(1)
@@ -145,7 +145,7 @@ def CoSDA(args, teacher_backbone, teacher_classifier, student_backbone, student_
 
         if 100.*correct/total >= best_acc:
             best_acc = 100.*correct/total
-            best_backbone = copy.deepcopy(student_backbone)
-            best_classifier = copy.deepcopy(student_classifier)
+            best_backbone = copy.deepcopy(teacher_backbone)
+            best_classifier = copy.deepcopy(teacher_classifier)
 
     return best_backbone, best_classifier

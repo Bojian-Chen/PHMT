@@ -36,7 +36,7 @@ parser.add_argument('--lr', default=0.1, type=float, help='the learning rate')
 ### Dataset parameters
 parser.add_argument('--batch_size', default=64, type=int, help='the batch size for data loader, for iFlytek, it is ·64')
 parser.add_argument('--test_batch_size', default=100, type=int, help='the batch size for test data loader')
-parser.add_argument('--dataset_name', default='SK', type=str, choices=['SK', 'SK_new', 'iFlytek', 'WT', 'PU_Real', 'PU_Art'], help='the dataset name')
+parser.add_argument('--dataset_name', default='WT', type=str, choices=['SK', 'SK_new', 'iFlytek', 'WT', 'PU_Real', 'PU_Art'], help='the dataset name')
 parser.add_argument('--data_num_class', default=100, type=int, help='the number of data in each class')
 
 ### No need to set the following parameters 
