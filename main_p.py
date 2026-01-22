@@ -42,16 +42,18 @@ DATASET_DOMAIN_SEQS = {
         np.array([0,1,3,2,4]),
         np.array([0,1,2,4,3]),
     ],
-    'PU_Real': [
-        np.array([3,2,0,1]),
-        np.array([2,3,0,1]),
-        np.array([3,0,2,1]),
-        np.array([3,2,1,0]),
-    ],
-    'PU_Art': [
-        np.array([2,0]),
-        np.array([0,2]),
-    ],
+    # 'PU_Real': [
+    #     np.array([3,2,0,1]),
+    #     np.array([2,3,0,1]),
+    #     np.array([3,0,2,1]),
+    #     np.array([3,2,1,0]),
+    # ],
+    # 'PU_Art': [
+    #     np.array([3,2,0,1]),
+    #     np.array([2,3,0,1]),
+    #     np.array([3,0,2,1]),
+    #     np.array([3,2,1,0]),
+    # ],
 }
 
 RANDOM_SEEDS = [2016, 2017, 2018, 2019, 2020, 2021, 2022, 2023, 2024, 2025]
@@ -192,7 +194,7 @@ def setup_dataset_args(args, dataset_name, domain_seq=None):
         # Grid-search optimized hyperparameters for WT
         args.tao_begin = 0.9
         args.tao_end = 0.97
-        args.rst_min = 0.005
+        args.rst_min = 0.0005
         args.rst_max = 0.05
     
     elif dataset_name == 'PU_Real':

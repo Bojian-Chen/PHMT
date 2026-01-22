@@ -209,7 +209,7 @@ if args.dataset_name == 'WT':
 if args.dataset_name == 'PU_Real':
     args.train_list = './PU_Real_4doamins_5classes.mat'
     args.test_list = './PU_Real_4doamins_5classes.mat'
-    args.Domain_Seq = np.array([3,2,0,1])  
+    args.Domain_Seq = np.array([0,1,2,3])  
     args.nb_session = len(args.Domain_Seq)
     args.nb_cl = 5
 
