@@ -242,10 +242,10 @@ def setup_dataset_args(args, dataset_name, domain_seq=None):
         args.nb_cl = 5
         args.batch_size = 64
         # Grid-search optimized hyperparameters for iFlytek
-        args.tao_begin = 0.9
-        args.tao_end = 0.95
-        args.rst_min = 0.001
-        args.rst_max = 0.005
+        args.tao_begin = 0.95
+        args.tao_end = 0.97
+        args.rst_min = 0.0005
+        args.rst_max = 0.1
         
     elif dataset_name == 'WT':
         args.train_list = './WT_all_5classes.mat'

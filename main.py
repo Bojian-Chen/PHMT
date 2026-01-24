@@ -190,10 +190,10 @@ if args.dataset_name == 'iFlytek':
     args.nb_session = len(args.Domain_Seq)
     args.nb_cl = 5
     # Grid-search optimized hyperparameters for iFlytek
-    args.tao_begin = 0.9
-    args.tao_end = 0.95
-    args.rst_min = 0.001
-    args.rst_max = 0.005
+    args.tao_begin = 0.95
+    args.tao_end = 0.97
+    args.rst_min = 0.0005
+    args.rst_max = 0.1
 
 if args.dataset_name == 'WT':
     args.batch_size = 128
