@@ -71,14 +71,9 @@ def distill_knowledge_by_entropy(score, confidence_gate, temperature):
 def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, student_classifier, train_loader, test_loader, backbone_optimizer, classifier_optimizer, backbone_scheduler, classifier_scheduler, fishers):
     beta=2
     best_acc = 0
-    gate_min = 0.0
-    gate_max = getattr(args, "gate_max", 0.4)
-    gate_ema_rho = getattr(args, "gate_ema_rho", 0.9)
+
 
     confidence_gate_prev = 0.4 * float(torch.log(torch.tensor(args.nb_cl)).item())
-
-    rst_prev = None
-    tao_prev = None
 
     # Setting up the CUDA device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -299,7 +294,7 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
 
 
         if args.Reset_student:
-            if (confidence_gate_prev - confidence_gate) > 1e-6:
+            if abs(confidence_gate_prev - confidence_gate) < 1e-3 and confidence_gate < 0.4 * float(torch.log(torch.tensor(args.nb_cl)).item()):
                 print("Reset student model.")
                 student_backbone.load_state_dict(teacher_backbone.state_dict())
                 student_classifier.load_state_dict(teacher_classifier.state_dict())
