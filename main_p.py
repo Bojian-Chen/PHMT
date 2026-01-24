@@ -159,10 +159,10 @@ def setup_dataset_args(args, dataset_name, domain_seq=None):
         args.nb_cl = 10
         args.batch_size = 64
         # Grid-search optimized hyperparameters for SK
-        args.tao_begin = 0.97
+        args.tao_begin = 0.95
         args.tao_end = 0.99
-        args.rst_min = 0.0005
-        args.rst_max = 0.01
+        args.rst_min = 0.005
+        args.rst_max = 0.05
     
     elif dataset_name == 'SK_new':
         args.train_list = './SK_new_all_10classes.mat'
