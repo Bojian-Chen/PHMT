@@ -264,35 +264,6 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
             pass
 
 
-        # if args.FISR:
-        #     fisher_weighted_sr(student_backbone, old_state_backbone, fishers, rst=rst)
-        # elif args.SR:
-        #     for nm, m in student_backbone.named_modules():
-        #         for npp, p in m.named_parameters():
-        #             if npp in ['weight', 'bias'] and p.requires_grad:
-        #                 mask = (torch.rand(p.shape) < rst).float().cuda()
-        #                 with torch.no_grad():
-        #                     p.data = old_state_backbone[f"{nm}.{npp}"] * mask + p * (1. - mask)
-        #     for nm, m in student_classifier.named_modules():
-        #         for npp, p in m.named_parameters():
-        #             if npp in ['weight', 'bias'] and p.requires_grad:
-        #                 mask = (torch.rand(p.shape) < rst).float().cuda()
-        #                 with torch.no_grad():
-        #                     p.data = old_state_classifier[f"{nm}.{npp}"] * mask + p * (1. - mask)
-        # else:
-        #     pass
-        # # EMA updates for Mean-Teacher framework
-        # if args.EMA:
-        #     bn_statistics_moving_average(old_bn_statistics, new_bn_statistics, epoch, args.epochs,tao_begin=tao, tao_end=tao) 
-        #     exponential_moving_average(teacher_backbone, student_backbone, epoch, args.epochs,tao_begin=tao, tao_end=tao)
-        #     exponential_moving_average(teacher_classifier, student_classifier, epoch, args.epochs,tao_begin=tao, tao_end=tao)
-        # else:
-        #     # Without EMA: directly copy student to teacher (no momentum)
-        #     teacher_backbone.load_state_dict(student_backbone.state_dict())
-        #     teacher_classifier.load_state_dict(student_classifier.state_dict())
-
-
-
         if args.Reset_student:
             if abs(confidence_gate_prev - confidence_gate) < 1e-3 and confidence_gate <= 0.4 * float(torch.log(torch.tensor(args.nb_cl)).item()):
                 print("Reset student model.")
