@@ -3,6 +3,9 @@ import numpy as np
 import torch.nn as nn
 from loss_function import *
 import copy
+import csv
+import os
+from datetime import datetime
 from utils.ema import moving_weight, bn_statistics_moving_average, exponential_moving_average, cotta_ema
 from utils.avgmeter import get_bn_statistics
 import torchvision.transforms as transforms
@@ -68,9 +71,30 @@ def distill_knowledge_by_entropy(score, confidence_gate, temperature):
     knowledge = torch.softmax(score / temperature, dim=1)
     return knowledge, knowledge_mask
 
+def _build_metrics_csv_path(args):
+    base_dir = args.pth
+    os.makedirs(base_dir, exist_ok=True)
+    dataset_name = args.dataset_name
+    random_seed = args.random_seed
+    session = args.session
+    domain = args.Domain_Seq[session]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"ours_new_stage_metrics_{dataset_name}_seed{random_seed}_session{session}_domain{domain}_{timestamp}.csv"
+    return os.path.join(base_dir, filename)
+
+def _save_metrics_to_csv(csv_path, metrics_history):
+    if not metrics_history:
+        return
+    fieldnames = list(metrics_history[0].keys())
+    with open(csv_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(metrics_history)
+
 def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, student_classifier, train_loader, test_loader, backbone_optimizer, classifier_optimizer, backbone_scheduler, classifier_scheduler, fishers):
     beta=2
     best_acc = 0
+    metrics_history = []
 
 
     confidence_gate_prev = 0.4 * float(torch.log(torch.tensor(args.nb_cl)).item())
@@ -105,6 +129,8 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
         student_classifier.train()
 
         train_loss = 0
+        consistency_loss_sum = 0
+        mutual_info_loss_sum = 0
 
         # Set the counters to zeros
         correct = 0
@@ -190,6 +216,8 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
             # update_fisher_from_grads(student_backbone, fishers, rho=fisher_rho)
 
             train_loss += loss.item()
+            consistency_loss_sum += float(consistency_loss.item())
+            mutual_info_loss_sum += float(mutual_info_loss.item())
  
             backbone_optimizer.step()
             classifier_optimizer.step()
@@ -276,11 +304,15 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
         # Learning rate decay
         backbone_scheduler.step()
         classifier_scheduler.step()
+        avg_train_loss = train_loss / (batch_idx + 1)
+        train_accuracy = 100. * correct / total
+        avg_consistency_loss = consistency_loss_sum / (batch_idx + 1)
+        avg_mutual_info_loss = mutual_info_loss_sum / (batch_idx + 1)
         
         # Print the training losses and accuracies
         print(backbone_scheduler.get_last_lr()[0])
         print('Train set: {} train loss: {:.4f}  accuracy: {:.4f} '.format(
-            len(train_loader), train_loss/(batch_idx+1),  100.*correct/total))
+            len(train_loader), avg_train_loss,  train_accuracy))
 
         # Running the test for this epoch
         teacher_backbone.eval()
@@ -301,15 +333,41 @@ def ours_new(args, teacher_backbone, teacher_classifier, student_backbone, stude
                 total += labels.size(0)
                 correct += predicted.eq(labels).sum().item()
 
-        print('Test set: {} test loss: {:.4f} accuracy: {:.4f}'.format(len(test_loader), test_loss/(batch_idx+1), 100.*correct/total))
+        avg_test_loss = test_loss / (batch_idx + 1)
+        test_accuracy = 100. * correct / total
+        print('Test set: {} test loss: {:.4f} accuracy: {:.4f}'.format(len(test_loader), avg_test_loss, test_accuracy))
+
+        metrics_history.append({
+            "stage_type": "target_adapt",
+            "session": args.session,
+            "domain": int(args.Domain_Seq[args.session]),
+            "epoch": epoch,
+            "backbone_learning_rate": backbone_scheduler.get_last_lr()[0],
+            "classifier_learning_rate": classifier_scheduler.get_last_lr()[0],
+            "confidence_gate": confidence_gate,
+            "confidence_gate_next": confidence_gate_prev,
+            "conf": conf,
+            "rst": rst,
+            "tao": tao,
+            "train_loss": avg_train_loss,
+            "train_accuracy": train_accuracy,
+            "train_consistency_loss": avg_consistency_loss,
+            "train_mutual_info_loss": avg_mutual_info_loss,
+            "test_loss": avg_test_loss,
+            "test_accuracy": test_accuracy,
+        })
 
         # Save the best model
-        if 100.*correct/total >= best_acc:
-            best_acc = 100.*correct/total
+        if test_accuracy >= best_acc:
+            best_acc = test_accuracy
             best_backbone = copy.deepcopy(teacher_backbone)
             best_classifier = copy.deepcopy(teacher_classifier)
             confidence_gate_best = confidence_gate_prev
 
         fishers= Fisher_Entropy(best_backbone, best_classifier, confidence_gate_best, train_loader)
+
+    metrics_csv_path = _build_metrics_csv_path(args)
+    _save_metrics_to_csv(metrics_csv_path, metrics_history)
+    print(f"Saved stage metrics to: {metrics_csv_path}")
 
     return best_backbone, best_classifier, fishers

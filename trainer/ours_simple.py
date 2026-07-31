@@ -3,6 +3,9 @@ import numpy as np
 import torch.nn as nn
 from loss_function import *
 import copy
+import csv
+import os
+from datetime import datetime
 from utils.ema import moving_weight, bn_statistics_moving_average, exponential_moving_average, cotta_ema
 from utils.avgmeter import get_bn_statistics
 import torchvision.transforms as transforms
@@ -10,7 +13,7 @@ from scipy.spatial.distance import cdist
 from sklearn.neighbors import KNeighborsClassifier 
 import math
 
-def T2PL(args, loader, backbone, classifier,topk_alpha, topk_beta):
+def T2PL(args, loader, backbone, classifier,topk_alpha, topk_beta, return_stage_acc=False):
     start_test = True
 
     with torch.no_grad():
@@ -118,6 +121,8 @@ def T2PL(args, loader, backbone, classifier,topk_alpha, topk_beta):
     for i in range(len(acc_list)):
         acc_dict['pa{}'.format(i)] = round(acc_list[i],3)
 
+    if return_stage_acc:
+        return predict.astype('int'), [float(acc) for acc in acc_list]
     return predict.astype('int')
 
 def obtain_label(loader, backbone, classifier, threshold, distance_type="cosine"):
@@ -172,6 +177,26 @@ def distill_knowledge(score, confidence_gate, temperature=0.07):
     knowledge = torch.softmax(score / temperature, dim=1)
     return knowledge, knowledge_mask
 
+def _build_metrics_csv_path(args):
+    base_dir = args.pth
+    os.makedirs(base_dir, exist_ok=True)
+    dataset_name = args.dataset_name
+    random_seed = args.random_seed
+    session = args.session
+    domain = args.Domain_Seq[session]
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"ours_simple_stage_metrics_{dataset_name}_seed{random_seed}_session{session}_domain{domain}_{timestamp}.csv"
+    return os.path.join(base_dir, filename)
+
+def _save_metrics_to_csv(csv_path, metrics_history):
+    if not metrics_history:
+        return
+    fieldnames = list(metrics_history[0].keys())
+    with open(csv_path, "w", newline="") as csv_file:
+        writer = csv.DictWriter(csv_file, fieldnames=fieldnames)
+        writer.writeheader()
+        writer.writerows(metrics_history)
+
 
 
 def ours_simple(args, teacher_backbone, teacher_classifier, student_backbone, student_classifier, source_backbone, train_loader, test_loader, backbone_optimizer,backbone_scheduler):
@@ -184,6 +209,7 @@ def ours_simple(args, teacher_backbone, teacher_classifier, student_backbone, st
     old_state_backbone = copy.deepcopy(student_backbone.state_dict())
     old_state_classifier = copy.deepcopy(student_classifier.state_dict())
     old_prototypes = teacher_classifier.classifier.weight.clone().detach()
+    metrics_history = []
 
     # Setting up the CUDA device
     device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
@@ -192,6 +218,8 @@ def ours_simple(args, teacher_backbone, teacher_classifier, student_backbone, st
     # teacher_classifier = teacher_classifier.to(device)
     student_backbone = student_backbone.to(device)
     student_classifier = student_classifier.to(device)
+    best_backbone = copy.deepcopy(student_backbone)
+    best_classifier = copy.deepcopy(student_classifier)
 
     for epoch in range(args.epochs):
         # confidence_gate= moving_weight(epoch, args.epochs, 0.7, 0.95)
@@ -207,8 +235,12 @@ def ours_simple(args, teacher_backbone, teacher_classifier, student_backbone, st
         student_classifier.eval()
         
         # mem_label = obtain_label(train_loader, student_backbone, student_classifier, 0.5)
+        pseudo_stage_acc = [float("nan")] * 4
         if args.TOPK:
-            mem_label = T2PL(args, train_loader, student_backbone, student_classifier, 8, math.floor(100*confidence_gate))
+            mem_label, pseudo_stage_acc = T2PL(
+                args, train_loader, student_backbone, student_classifier, 8,
+                math.floor(100*confidence_gate), return_stage_acc=True
+            )
         else:
             mem_label = obtain_label(train_loader, student_backbone, student_classifier, 0)
         
@@ -218,6 +250,9 @@ def ours_simple(args, teacher_backbone, teacher_classifier, student_backbone, st
         student_classifier.train()
 
         train_loss = 0
+        classifier_loss_sum = 0
+        mi_loss_sum = 0
+        pca_loss_sum = 0
 
         # Set the counters to zeros
         correct = 0
@@ -298,6 +333,9 @@ def ours_simple(args, teacher_backbone, teacher_classifier, student_backbone, st
 
             loss.backward()
             train_loss += loss.item()
+            classifier_loss_sum += float(classifier_loss.item())
+            mi_loss_sum += float(mutual_info_loss.item())
+            pca_loss_sum += float(pcaloss.item())
  
             backbone_optimizer.step()
 
@@ -331,11 +369,16 @@ def ours_simple(args, teacher_backbone, teacher_classifier, student_backbone, st
 
         # Learning rate decay
         backbone_scheduler.step()
+        avg_train_loss = train_loss / (batch_idx + 1)
+        train_accuracy = 100. * correct / total
+        avg_classifier_loss = classifier_loss_sum / (batch_idx + 1)
+        avg_mi_loss = mi_loss_sum / (batch_idx + 1)
+        avg_pca_loss = pca_loss_sum / (batch_idx + 1)
 
         # Print the training losses and accuracies
         print(backbone_scheduler.get_last_lr()[0])
         print('Train set: {} train loss: {:.4f}  accuracy: {:.4f} '.format(
-            len(train_loader), train_loss/(batch_idx+1),  100.*correct/total))
+            len(train_loader), avg_train_loss,  train_accuracy))
 
         # Running the test for this epoch
         student_backbone.eval()
@@ -356,11 +399,37 @@ def ours_simple(args, teacher_backbone, teacher_classifier, student_backbone, st
                 total += labels.size(0)
                 correct += predicted.eq(labels).sum().item()
 
-        print('Test set: {} test loss: {:.4f} accuracy: {:.4f}'.format(len(test_loader), test_loss/(batch_idx+1), 100.*correct/total))
+        avg_test_loss = test_loss / (batch_idx + 1)
+        test_accuracy = 100. * correct / total
+        print('Test set: {} test loss: {:.4f} accuracy: {:.4f}'.format(len(test_loader), avg_test_loss, test_accuracy))
 
-        if 100.*correct/total >= best_acc:
-            best_acc = 100.*correct/total
+        metrics_history.append({
+            "stage_type": "target_adapt",
+            "session": args.session,
+            "domain": int(args.Domain_Seq[args.session]),
+            "epoch": epoch,
+            "learning_rate": backbone_scheduler.get_last_lr()[0],
+            "confidence_gate": confidence_gate,
+            "train_loss": avg_train_loss,
+            "train_accuracy": train_accuracy,
+            "train_classifier_loss": avg_classifier_loss,
+            "train_mi_loss": avg_mi_loss,
+            "train_pca_loss": avg_pca_loss,
+            "test_loss": avg_test_loss,
+            "test_accuracy": test_accuracy,
+            "pseudo_softmax_accuracy": pseudo_stage_acc[0],
+            "pseudo_shot_iter1_accuracy": pseudo_stage_acc[1],
+            "pseudo_shot_iter2_accuracy": pseudo_stage_acc[2],
+            "pseudo_knn_accuracy": pseudo_stage_acc[3],
+        })
+
+        if test_accuracy >= best_acc:
+            best_acc = test_accuracy
             best_backbone = copy.deepcopy(student_backbone)
             best_classifier = copy.deepcopy(student_classifier)
+
+    metrics_csv_path = _build_metrics_csv_path(args)
+    _save_metrics_to_csv(metrics_csv_path, metrics_history)
+    print(f"Saved stage metrics to: {metrics_csv_path}")
 
     return best_backbone, best_classifier

@@ -55,7 +55,7 @@ def train(args):
             os.makedirs(args.pth)
 
     for session in range(args.nb_session):
-        # args.session = session
+        args.session = session
         print('session: {}'.format(session))
         train_loader = trainloader_list[session]
         test_loader = testloader_list[session]

@@ -13,7 +13,7 @@ from trainer.trainer import train
 parser = argparse.ArgumentParser()
 
 ### Basic parameters
-parser.add_argument('--random_seed', default=2025, type=int, help='random seed')
+parser.add_argument('--random_seed', default=2022, type=int, help='random seed')
 parser.add_argument('--backbone_name', default='resnet14', type=str, choices=['resnet14','resnet32', 'resnet18_1D','cnn'], help='the backbone name')
 parser.add_argument('--classifer', default='cos', type=str, choices=['fc', 'cos', 'eu', 'fcwn'], help='the classifier')
 parser.add_argument('--train_parames', default='default', type=str, choices=['default','BN', 'woBN'], help='the trained parameters of model')
@@ -29,7 +29,7 @@ parser.add_argument('--base_lr', default=0.1, type=float, help='the learning rat
 parser.add_argument('--RandMix', action='store_true', help='the RandMix setting')
 
 ### Incremental parameters
-parser.add_argument('--incremental_mode', default='ours_new', type=str, choices=['norm', 'PesudoLabel', 'Tent', 'shot', 'CoTTA', 'gsfda', 'UCSN' 'CoSDA', 'ours', 'ours_simple', 'RaTP', 'EATA', 'AFSFFD'], help='the incremental mode')
+parser.add_argument('--incremental_mode', default='ours_simple', type=str, choices=['norm', 'PesudoLabel', 'Tent', 'shot', 'CoTTA', 'gsfda', 'UCSN' 'CoSDA', 'ours', 'ours_simple', 'RaTP', 'EATA', 'AFSFFD'], help='the incremental mode')
 parser.add_argument('--epochs', default=40, type=int, help='the number of epochs')
 parser.add_argument('--lr', default=0.1, type=float, help='the learning rate')
 
@@ -52,7 +52,7 @@ parser.add_argument('--nb_session', type=int, help='the number of sessions')
 ### Save all
 parser.add_argument('--save_model', action='store_true', help='the save setting')
 
-### Ablation setting for ours_simple
+### Ablation setting for ours_new
 parser.add_argument('--CKCR', action='store_false', help='Enable CKCR')
 parser.add_argument('--select_soft_knowledge', action='store_false', help='Enable soft knowledge selection')
 parser.add_argument('--mixup', action='store_false', help='Enable mixup')
@@ -63,7 +63,8 @@ parser.add_argument('--MI', action='store_false', help='Enable MI loss')
 parser.add_argument('--EMA', action='store_false', help='Enable EMA for Mean-Teacher')
 parser.add_argument('--Reset_student', action='store_false', help='Reset student from teacher each epoch')
 
-
+# parser.add_argument('--TOPK', action='store_false', help='Enable TOPK')
+# parser.add_argument('--TOPK', action='store_false', help='Enable TOPK')
 
 ### Hyperparameters for ours_new
 parser.add_argument('--rst_min', default=None, type=float, help='Override rst_min value')
